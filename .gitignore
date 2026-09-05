@@ -1,0 +1,4 @@
+# local backup files/folders — keep out of the repo
+init.lua.old
+lua.old.folder/
+*.old
