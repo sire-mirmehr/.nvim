@@ -93,6 +93,43 @@ return {
       -- Capabilities provided by nvim-cmp
       local capabilities = require('cmp_nvim_lsp').default_capabilities()
 
+      -- Some linters publish ranges that end before they start. Neovim 0.12
+      -- rejects those ranges while creating diagnostic extmarks.
+      local diagnostic_set = vim.diagnostic.set
+      vim.diagnostic.set = function(namespace, bufnr, diagnostics, opts)
+        for _, diagnostic in ipairs(diagnostics or {}) do
+          if diagnostic.lnum and (not diagnostic.end_lnum or diagnostic.end_lnum < diagnostic.lnum) then
+            diagnostic.end_lnum = diagnostic.lnum
+            diagnostic.end_col = math.max(diagnostic.end_col or 0, diagnostic.col or 0)
+          elseif diagnostic.lnum and diagnostic.end_lnum == diagnostic.lnum and diagnostic.end_col and diagnostic.col then
+            diagnostic.end_col = math.max(diagnostic.end_col, diagnostic.col)
+          end
+        end
+
+        return diagnostic_set(namespace, bufnr, diagnostics, opts)
+      end
+
+      local publish_diagnostics = vim.lsp.handlers['textDocument/publishDiagnostics']
+      vim.lsp.handlers['textDocument/publishDiagnostics'] = function(err, result, ctx, config)
+        if result and result.diagnostics then
+          for _, diagnostic in ipairs(result.diagnostics) do
+            local start = diagnostic.range and diagnostic.range.start
+            local finish = diagnostic.range and diagnostic.range['end']
+
+            if start and (not finish or finish.line < start.line or (finish.line == start.line and finish.character < start.character)) then
+              if diagnostic.range then
+                diagnostic.range['end'] = {
+                  line = start.line,
+                  character = start.character,
+                }
+              end
+            end
+          end
+        end
+
+        return publish_diagnostics(err, result, ctx, config)
+      end
+
       local servers = {
         'html',
         'cssls',
